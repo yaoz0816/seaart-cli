@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+
+const currentNodeVersion = process.versions.node;
+const semver = require('semver');
+
+// 检查 Node.js 版本
+if (!semver.gte(currentNodeVersion, '18.0.0')) {
+  console.error(
+    '您的 Node.js 版本过低。\n' +
+    `当前版本: v${currentNodeVersion}\n` +
+    '需要版本: >=18.0.0\n' +
+    '请升级您的 Node.js 版本。'
+  );
+  process.exit(1);
+}
+
+// 加载主程序
+require('../dist/index.js'); 

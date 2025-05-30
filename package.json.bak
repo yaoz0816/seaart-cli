@@ -1,0 +1,66 @@
+{
+  "name": "@seaart/cli",
+  "version": "0.0.1",
+  "description": "SeaArt React Native 项目脚手架工具",
+  "main": "dist/index.js",
+  "bin": {
+    "seaart": "bin/seaart"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "tsx src/index.ts",
+    "test": "jest --passWithNoTests",
+    "lint": "eslint src --ext .ts,.tsx",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "react-native",
+    "cli",
+    "scaffold",
+    "seaart",
+    "template"
+  ],
+  "author": "SeaArt Technology Team",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1",
+    "fs-extra": "^11.2.0",
+    "glob": "^10.3.10",
+    "semver": "^7.5.4",
+    "download-git-repo": "^3.0.2",
+    "cross-spawn": "^7.0.3",
+    "validate-npm-package-name": "^5.0.0",
+    "latest-version": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/inquirer": "^8.2.10",
+    "@types/fs-extra": "^11.0.4",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/validate-npm-package-name": "^4.0.2",
+    "@types/jest": "^29.5.12",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seaart/cli.git"
+  },
+  "homepage": "https://github.com/seaart/cli#readme",
+  "bugs": {
+    "url": "https://github.com/seaart/cli/issues"
+  }
+} 
