@@ -166,19 +166,17 @@ async function cleanTemplateFiles(projectPath: string): Promise<void> {
 async function updateTemplateProject(projectPath: string, projectName: string): Promise<void> {
 	// 更新 package.json
 	const packageJsonPath = path.join(projectPath, 'package.json')
-	if (await fs.pathExists(packageJsonPath)) {
-		const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'))
-		packageJson.name = projectName
-		packageJson.version = '1.0.0'
-		packageJson.private = true
+	const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'))
+	packageJson.name = projectName
+	packageJson.version = '1.0.0'
+	packageJson.private = true
 
-		// 移除 CLI 相关的字段
-		delete packageJson.bin
-		delete packageJson.publishConfig
+	// 移除 CLI 相关的字段
+	delete packageJson.bin
+	delete packageJson.publishConfig
 
-		await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
-		console.log(chalk.gray('  ✓ 更新 package.json'))
-	}
+	await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
+	console.log(chalk.gray('  ✓ 更新 package.json'))
 
 	// 更新 app.json
 	const appJsonPath = path.join(projectPath, 'app.json')
@@ -423,106 +421,217 @@ async function ensureAndroidSettingsConfiguration(projectPath: string, cliDir: s
 	}
 }
 
-async function updateProjectConfigs(projectPath: string, projectName: string): Promise<void> {
-	// 更新 app.json
-	try {
-		const appJsonPath = path.join(projectPath, 'app.json')
-		if (await fs.pathExists(appJsonPath)) {
-			const appJson = JSON.parse(await fs.readFile(appJsonPath, 'utf8'))
-			appJson.name = projectName
-			appJson.displayName = projectName
-			if (appJson.expo) {
-				appJson.expo.name = projectName
-				appJson.expo.slug = projectName.toLowerCase()
-			}
-			await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2))
-		}
-	} catch (error: any) {
-		console.log(chalk.yellow(`⚠ 更新 app.json 失败: ${error.message}`))
+async function configureProject(projectPath: string, projectName: string, packageName: string): Promise<void> {
+	// 更新 package.json
+	const packageJsonPath = path.join(projectPath, 'package.json')
+	if (await fs.pathExists(packageJsonPath)) {
+		const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'))
+		packageJson.name = projectName
+		await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
+		console.log(chalk.gray('  ✓ 更新 package.json'))
 	}
 
-	// 更新 seaart-config.json
-	try {
-		const configPath = path.join(projectPath, 'seaart-config.json')
-		if (await fs.pathExists(configPath)) {
-			const config = JSON.parse(await fs.readFile(configPath, 'utf8'))
-			config.project = {
-				...config.project,
-				name: projectName,
-				displayName: projectName
-			}
-			await fs.writeFile(configPath, JSON.stringify(config, null, 2))
+	// 更新 app.json
+	const appJsonPath = path.join(projectPath, 'app.json')
+	if (await fs.pathExists(appJsonPath)) {
+		const appJson = JSON.parse(await fs.readFile(appJsonPath, 'utf8'))
+		appJson.name = projectName
+		appJson.displayName = projectName
+		if (appJson.expo) {
+			appJson.expo.name = projectName
+			appJson.expo.slug = projectName.toLowerCase()
 		}
-	} catch (error: any) {
-		console.log(chalk.yellow(`⚠ 更新 seaart-config.json 失败: ${error.message}`))
+		await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2))
+		console.log(chalk.gray('  ✓ 更新 app.json'))
+	}
+
+	// 更新 index.js 中的组件注册名称
+	const indexJsPath = path.join(projectPath, 'index.js')
+	if (await fs.pathExists(indexJsPath)) {
+		let content = await fs.readFile(indexJsPath, 'utf8')
+		// 确保使用项目名称作为组件名
+		if (content.includes('import { name as appName }')) {
+			// 如果使用了 app.json 中的 name，保持不变（这是推荐做法）
+		} else {
+			// 如果是硬编码的组件名，更新它
+			content = content.replace(
+				/AppRegistry\.registerComponent\('[^']*'/,
+				`AppRegistry.registerComponent('${projectName}'`
+			)
+		}
+		await fs.writeFile(indexJsPath, content)
+		console.log(chalk.gray('  ✓ 更新 index.js 组件注册'))
 	}
 
 	// 更新 Android 包名
-	await updateAndroidPackageName(projectPath, projectName)
+	await updateAndroidPackageName(projectPath, packageName, projectName)
 
-	// 更新 iOS 配置
-	await updateIOSConfig(projectPath, projectName)
+	// 更新 iOS Bundle ID
+	await updateIOSBundleId(projectPath, packageName, projectName)
 }
 
-async function updateAndroidPackageName(projectPath: string, projectName: string): Promise<void> {
-	try {
-		const packageName = `com.seaart.${projectName.toLowerCase()}`
+async function updateAndroidPackageName(projectPath: string, packageName: string, projectName: string): Promise<void> {
+	const androidPath = path.join(projectPath, 'android')
+	if (!await fs.pathExists(androidPath)) {
+		return
+	}
 
-		// 更新 build.gradle
-		const buildGradlePath = path.join(projectPath, 'android/app/build.gradle')
-		if (await fs.pathExists(buildGradlePath)) {
-			let buildGradle = await fs.readFile(buildGradlePath, 'utf8')
-			buildGradle = buildGradle.replace(/applicationId\s+"[^"]*"/, `applicationId "${packageName}"`)
-			buildGradle = buildGradle.replace(/namespace\s+"[^"]*"/, `namespace "${packageName}"`)
-			await fs.writeFile(buildGradlePath, buildGradle)
+	// 更新 app/build.gradle
+	const buildGradlePath = path.join(androidPath, 'app/build.gradle')
+	if (await fs.pathExists(buildGradlePath)) {
+		let content = await fs.readFile(buildGradlePath, 'utf8')
+
+		// 更新 namespace
+		content = content.replace(/namespace\s+"[^"]*"/, `namespace "${packageName}"`)
+
+		// 更新 applicationId
+		content = content.replace(/applicationId\s+"[^"]*"/, `applicationId "${packageName}"`)
+
+		await fs.writeFile(buildGradlePath, content)
+		console.log(chalk.gray('  ✓ 更新 Android build.gradle'))
+	}
+
+	// 更新源码包名和文件路径
+	const javaPath = path.join(androidPath, 'app/src/main/java')
+	if (await fs.pathExists(javaPath)) {
+		// 查找现有的 Java/Kotlin 文件
+		const files = await findJavaKotlinFiles(javaPath)
+
+		// 创建新的包目录结构
+		const newPackagePath = path.join(javaPath, ...packageName.split('.'))
+		await fs.ensureDir(newPackagePath)
+
+		for (const file of files) {
+			// 读取文件内容并更新包声明
+			let content = await fs.readFile(file, 'utf8')
+			const oldPackageMatch = content.match(/package\s+([a-zA-Z0-9_.]+)/)
+			if (oldPackageMatch) {
+				content = content.replace(/package\s+[a-zA-Z0-9_.]+/, `package ${packageName}`)
+
+				// 如果是 MainActivity，还需要更新 getMainComponentName 方法
+				if (file.includes('MainActivity')) {
+					content = content.replace(
+						/override fun getMainComponentName\(\): String = "[^"]*"/,
+						`override fun getMainComponentName(): String = "${projectName}"`
+					)
+					console.log(chalk.gray(`  ✓ 更新 MainActivity 组件名称: ${projectName}`))
+				}
+
+				// 移动文件到新的包目录
+				const fileName = path.basename(file)
+				const newFilePath = path.join(newPackagePath, fileName)
+				await fs.writeFile(newFilePath, content)
+				console.log(chalk.gray(`  ✓ 更新并移动: ${fileName}`))
+			}
 		}
 
-		// 更新 strings.xml
-		const stringsPath = path.join(projectPath, 'android/app/src/main/res/values/strings.xml')
-		if (await fs.pathExists(stringsPath)) {
-			let strings = await fs.readFile(stringsPath, 'utf8')
-			strings = strings.replace(/<string name="app_name">[^<]*<\/string>/, `<string name="app_name">${projectName}</string>`)
-			await fs.writeFile(stringsPath, strings)
-		}
-	} catch (error: any) {
-		console.log(chalk.yellow(`⚠ 更新 Android 配置失败: ${error.message}`))
+		// 完全清理旧的包目录结构
+		await cleanupOldPackageDirectories(javaPath, packageName)
+	}
+
+	// 更新 strings.xml 中的应用名称
+	const stringsXmlPath = path.join(androidPath, 'app/src/main/res/values/strings.xml')
+	if (await fs.pathExists(stringsXmlPath)) {
+		let content = await fs.readFile(stringsXmlPath, 'utf8')
+		content = content.replace(/<string name="app_name">[^<]*<\/string>/, `<string name="app_name">${projectName}</string>`)
+		await fs.writeFile(stringsXmlPath, content)
+		console.log(chalk.gray('  ✓ 更新 Android strings.xml'))
 	}
 }
 
-async function updateIOSConfig(projectPath: string, projectName: string): Promise<void> {
+async function findJavaKotlinFiles(dir: string): Promise<string[]> {
+	const files: string[] = []
+
+	async function searchDir(currentDir: string) {
+		const items = await fs.readdir(currentDir)
+		for (const item of items) {
+			const fullPath = path.join(currentDir, item)
+			const stat = await fs.stat(fullPath)
+			if (stat.isDirectory()) {
+				await searchDir(fullPath)
+			} else if (/\.(java|kt)$/.test(item)) {
+				files.push(fullPath)
+			}
+		}
+	}
+
+	await searchDir(dir)
+	return files
+}
+
+async function cleanupOldPackageDirectories(javaPath: string, newPackageName: string): Promise<void> {
 	try {
-		// 查找 iOS 项目目录
-		const iosPath = path.join(projectPath, 'ios')
-		if (await fs.pathExists(iosPath)) {
-			const iosItems = await fs.readdir(iosPath)
-			const projectDirs = iosItems.filter(item =>
-				!item.startsWith('.') &&
-				!item.includes('.xcworkspace') &&
-				!item.includes('.xcodeproj') &&
-				item !== 'Pods'
-			)
+		const newPackageParts = newPackageName.split('.')
 
-			if (projectDirs.length > 0) {
-				const oldProjectDir = projectDirs[0]
-				const oldProjectPath = path.join(iosPath, oldProjectDir)
-				const newProjectPath = path.join(iosPath, projectName)
+		// 递归清理所有不匹配新包名的目录
+		async function cleanupRecursive(currentPath: string, depth: number) {
+			if (depth >= newPackageParts.length) {
+				return
+			}
 
-				// 重命名项目目录
-				if (oldProjectDir !== projectName) {
-					await fs.move(oldProjectPath, newProjectPath)
-				}
+			const items = await fs.readdir(currentPath)
+			for (const item of items) {
+				const itemPath = path.join(currentPath, item)
+				const stat = await fs.stat(itemPath)
 
-				// 更新 Info.plist
-				const infoPlistPath = path.join(newProjectPath, 'Info.plist')
-				if (await fs.pathExists(infoPlistPath)) {
-					let infoPlist = await fs.readFile(infoPlistPath, 'utf8')
-					infoPlist = infoPlist.replace(/<string>.*<\/string>(\s*<key>CFBundleDisplayName<\/key>)/, `<string>${projectName}</string>$1`)
-					await fs.writeFile(infoPlistPath, infoPlist)
+				if (stat.isDirectory()) {
+					// 如果这个目录不是新包名路径的一部分，删除它
+					if (item !== newPackageParts[depth]) {
+						await fs.remove(itemPath)
+						console.log(chalk.gray(`  ✓ 清理旧目录: ${path.relative(javaPath, itemPath)}`))
+					} else {
+						// 如果是新包名路径的一部分，继续深入清理
+						await cleanupRecursive(itemPath, depth + 1)
+					}
 				}
 			}
 		}
-	} catch (error: any) {
-		console.log(chalk.yellow(`⚠ 更新 iOS 配置失败: ${error.message}`))
+
+		await cleanupRecursive(javaPath, 0)
+	} catch (error) {
+		// 忽略清理错误
+		console.log(chalk.gray(`  ⚠ 清理旧目录时出现错误: ${error}`))
+	}
+}
+
+async function updateIOSBundleId(projectPath: string, packageName: string, projectName: string): Promise<void> {
+	const iosPath = path.join(projectPath, 'ios')
+	if (!await fs.pathExists(iosPath)) {
+		return
+	}
+
+	// 查找 .xcodeproj 文件
+	const iosItems = await fs.readdir(iosPath)
+	const xcodeprojDir = iosItems.find(item => item.endsWith('.xcodeproj'))
+
+	if (xcodeprojDir) {
+		const pbxprojPath = path.join(iosPath, xcodeprojDir, 'project.pbxproj')
+		if (await fs.pathExists(pbxprojPath)) {
+			let content = await fs.readFile(pbxprojPath, 'utf8')
+
+			// 更新所有 PRODUCT_BUNDLE_IDENTIFIER 配置，包括特殊的 SDK 配置
+			content = content.replace(/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/g, `PRODUCT_BUNDLE_IDENTIFIER = ${packageName};`)
+			content = content.replace(/"PRODUCT_BUNDLE_IDENTIFIER\[sdk=iphoneos\*\]" = [^;]+;/g, `"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = ${packageName};`)
+
+			await fs.writeFile(pbxprojPath, content)
+			console.log(chalk.gray('  ✓ 更新 iOS Bundle ID'))
+		}
+	}
+
+	// 更新 Info.plist 中的显示名称
+	const infoPlistPaths = [
+		path.join(iosPath, projectName, 'Info.plist'),
+		path.join(iosPath, `${projectName}/Info.plist`)
+	]
+
+	for (const infoPlistPath of infoPlistPaths) {
+		if (await fs.pathExists(infoPlistPath)) {
+			let content = await fs.readFile(infoPlistPath, 'utf8')
+			content = content.replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/, `<key>CFBundleDisplayName</key>\n\t<string>${projectName}</string>`)
+			await fs.writeFile(infoPlistPath, content)
+			console.log(chalk.gray('  ✓ 更新 iOS Info.plist'))
+			break
+		}
 	}
 }
 
@@ -1463,25 +1572,6 @@ class MainActivity : ReactActivity() {
 请替换这些占位符文件为你的实际应用资源。
 `
 	await fs.writeFile(path.join(assetsPath, 'README.md'), assetsReadme)
-}
-
-async function configureProject(projectPath: string, projectName: string, packageName: string): Promise<void> {
-	// 更新 package.json
-	const packageJsonPath = path.join(projectPath, 'package.json')
-	const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'))
-	packageJson.name = projectName
-	await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
-
-	// 更新 app.json
-	const appJsonPath = path.join(projectPath, 'app.json')
-	const appJson = JSON.parse(await fs.readFile(appJsonPath, 'utf8'))
-	appJson.name = projectName
-	appJson.displayName = projectName
-	if (appJson.expo) {
-		appJson.expo.name = projectName
-		appJson.expo.slug = projectName.toLowerCase()
-	}
-	await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2))
 }
 
 async function installDependencies(projectPath: string, packageManager: string): Promise<void> {
