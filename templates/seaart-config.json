@@ -10,7 +10,7 @@
     "default": {
       "name": "默认模板",
       "description": "标准的 SeaArt React Native 应用模板",
-      "repository": "https://github.com/seaart/react-native-template.git",
+      "repository": "https://github.com/yaoz0816/react-native-seaart-template.git",
       "branch": "main",
       "features": [
         "TypeScript 支持",
@@ -156,4 +156,4 @@
       "网络请求使用封装的 axios 实例"
     ]
   }
-} 
+}
