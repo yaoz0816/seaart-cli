@@ -1,7 +1,7 @@
 {
   "templateInfo": {
     "name": "SeaArt React Native Template",
-    "version": "1.0.0",
+    "version": "0.1.1",
     "description": "海艺团队专用的 React Native 开发模板",
     "author": "SeaArt Technology Team",
     "license": "MIT"
@@ -10,7 +10,7 @@
     "default": {
       "name": "默认模板",
       "description": "标准的 SeaArt React Native 应用模板",
-      "repository": "yaoz0816/seaart-cli",
+      "repository": "yaoz0816/react-native-seaart-template",
       "branch": "main",
       "features": [
         "TypeScript 支持",
