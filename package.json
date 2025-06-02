@@ -1,9 +1,9 @@
 {
-  "name": "@seaart/cli",
-	"publishConfig": {
+  "name": "@ipzero/seaart-cli",
+  "publishConfig": {
     "access": "public"
   },
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "SeaArt React Native 项目脚手架工具",
   "main": "dist/index.js",
   "bin": {
@@ -66,4 +66,4 @@
   "bugs": {
     "url": "https://github.com/seaart/cli/issues"
   }
-} 
+}
