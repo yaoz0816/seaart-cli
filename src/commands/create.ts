@@ -3,6 +3,11 @@ import { spawn } from 'child_process'
 import fs from 'fs-extra'
 import ora from 'ora'
 import path from 'path'
+import { promisify } from 'util'
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const download = require('download-git-repo')
+const downloadRepo = promisify(download)
 
 interface CreateOptions {
 	template?: string
@@ -75,12 +80,6 @@ export async function createProject(projectName: string, options: CreateOptions 
 			spinner.succeed('Git 仓库初始化完成')
 		}
 
-		// 验证并修复 Android 文件
-		await verifyAndFixAndroidFiles(projectPath)
-
-		// 更新项目特定的配置文件
-		await updateProjectConfigs(projectPath, projectName)
-
 		// 完成提示
 		console.log(chalk.green('\n✅ 项目创建成功!'))
 		console.log(chalk.yellow('\n📝 下一步:'))
@@ -108,11 +107,145 @@ async function cloneTemplate(template: string, projectPath: string, projectName:
 	// 创建项目根目录
 	await fs.ensureDir(projectPath)
 
-	// 检查是否使用完整项目模板
-	if (template === 'full' || template === 'clone') {
-		await cloneFullProject(projectPath, projectName)
-		return
+	// 加载模版配置
+	const configPath = path.resolve(__dirname, '../../templates/seaart-config.json')
+	const config = JSON.parse(await fs.readFile(configPath, 'utf8'))
+
+	// 获取模版信息
+	const templateInfo = config.templates[template] || config.templates.default
+	const repository = templateInfo.repository
+	const branch = templateInfo.branch || 'main'
+
+	console.log(chalk.blue(`📦 从 Git 仓库下载模版: ${repository}#${branch}`))
+
+	try {
+		// 从 Git 仓库下载模版
+		await downloadRepo(`${repository}#${branch}`, projectPath, { clone: false })
+		console.log(chalk.green('✅ 模版下载完成'))
+
+		// 清理不需要的文件
+		await cleanTemplateFiles(projectPath)
+
+		// 更新项目配置
+		await updateTemplateProject(projectPath, projectName)
+
+	} catch (error: any) {
+		console.error(chalk.red('❌ 模版下载失败:'), error.message)
+
+		// 如果是网络错误或仓库不存在，回退到创建基础项目
+		console.log(chalk.yellow('🔄 回退到创建基础项目...'))
+		await createBasicProject(projectPath, projectName)
 	}
+}
+
+async function cleanTemplateFiles(projectPath: string): Promise<void> {
+	// 需要删除的文件和目录
+	const filesToDelete = [
+		'.git',
+		'node_modules',
+		'dist',
+		'pnpm-lock.yaml',
+		'yarn.lock',
+		'package-lock.json',
+		'.DS_Store'
+	]
+
+	for (const file of filesToDelete) {
+		const filePath = path.join(projectPath, file)
+		try {
+			if (await fs.pathExists(filePath)) {
+				await fs.remove(filePath)
+				console.log(chalk.gray(`  ✓ 清理: ${file}`))
+			}
+		} catch (error) {
+			// 忽略删除错误
+		}
+	}
+}
+
+async function updateTemplateProject(projectPath: string, projectName: string): Promise<void> {
+	// 更新 package.json
+	const packageJsonPath = path.join(projectPath, 'package.json')
+	if (await fs.pathExists(packageJsonPath)) {
+		const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'))
+		packageJson.name = projectName
+		packageJson.version = '1.0.0'
+		packageJson.private = true
+
+		// 移除 CLI 相关的字段
+		delete packageJson.bin
+		delete packageJson.publishConfig
+
+		await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
+		console.log(chalk.gray('  ✓ 更新 package.json'))
+	}
+
+	// 更新 app.json
+	const appJsonPath = path.join(projectPath, 'app.json')
+	if (await fs.pathExists(appJsonPath)) {
+		const appJson = JSON.parse(await fs.readFile(appJsonPath, 'utf8'))
+		appJson.name = projectName
+		appJson.displayName = projectName
+		if (appJson.expo) {
+			appJson.expo.name = projectName
+			appJson.expo.slug = projectName.toLowerCase()
+		}
+		await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2))
+		console.log(chalk.gray('  ✓ 更新 app.json'))
+	}
+
+	// 如果不存在 app.json，创建一个基础的
+	if (!await fs.pathExists(appJsonPath)) {
+		const appJson = {
+			name: projectName,
+			displayName: projectName,
+			expo: {
+				name: projectName,
+				slug: projectName.toLowerCase(),
+				version: '1.0.0',
+				orientation: 'portrait',
+				icon: './assets/icon.png',
+				userInterfaceStyle: 'light',
+				splash: {
+					image: './assets/splash.png',
+					resizeMode: 'contain',
+					backgroundColor: '#ffffff'
+				},
+				assetBundlePatterns: ['**/*'],
+				ios: {
+					supportsTablet: true
+				},
+				android: {
+					adaptiveIcon: {
+						foregroundImage: './assets/adaptive-icon.png',
+						backgroundColor: '#ffffff'
+					}
+				},
+				web: {
+					favicon: './assets/favicon.png'
+				}
+			}
+		}
+		await fs.writeJson(appJsonPath, appJson, { spaces: 2 })
+		console.log(chalk.gray('  ✓ 创建 app.json'))
+	}
+
+	// 确保存在 index.js
+	const indexJsPath = path.join(projectPath, 'index.js')
+	if (!await fs.pathExists(indexJsPath)) {
+		const indexJs = `import { AppRegistry } from 'react-native';
+import AppRoot from './src/AppRoot';
+import { name as appName } from './app.json';
+
+AppRegistry.registerComponent(appName, () => AppRoot);
+`
+		await fs.writeFile(indexJsPath, indexJs)
+		console.log(chalk.gray('  ✓ 创建 index.js'))
+	}
+}
+
+async function createBasicProject(projectPath: string, projectName: string): Promise<void> {
+	console.log(chalk.blue('🔨 创建基础 React Native 项目...'))
 
 	// 创建基础模板的 package.json
 	const packageJson = {
@@ -188,136 +321,6 @@ async function cloneTemplate(template: string, projectPath: string, projectName:
 	await createPlatformFiles(projectPath, projectName)
 }
 
-async function cloneFullProject(projectPath: string, projectName: string): Promise<void> {
-	console.log(chalk.blue('🔄 正在复制完整项目模板...'))
-
-	// 获取当前 CLI 所在的项目根目录
-	const cliDir = path.resolve(__dirname, '../../../../')
-
-	// 复制当前项目的 package.json 并更新项目名称
-	const sourcePackageJson = JSON.parse(await fs.readFile(path.join(cliDir, 'package.json'), 'utf8'))
-	const targetPackageJson = {
-		...sourcePackageJson,
-		name: projectName,
-		version: '1.0.0',
-		private: true
-	}
-	await fs.writeJson(path.join(projectPath, 'package.json'), targetPackageJson, { spaces: 2 })
-
-	// 需要复制的文件和目录
-	const filesToCopy = [
-		// 配置文件
-		'tsconfig.json',
-		'babel.config.js',
-		'metro.config.js',
-		'app.json',
-		'.gitignore',
-		'.editorconfig',
-		'.prettierrc.js',
-		'.prettierignore',
-		'.eslintrc.js',
-		'.npmrc',
-		'jest.config.js',
-		'tailwind.config.js',
-		'.watchmanconfig',
-		'.env',
-
-		// 源代码目录
-		'src',
-
-		// 平台文件
-		'android',
-		'ios',
-
-		// 其他重要文件
-		'index.js',
-		'updateI18n.mjs',
-		'seaart-config.json',
-
-		// 脚本目录
-		'scripts',
-
-		// 文档
-		'README.md',
-		'SCAFFOLD_INSTRUCTIONS.md'
-	]
-
-	// 复制文件和目录
-	for (const item of filesToCopy) {
-		const sourcePath = path.join(cliDir, item)
-		const targetPath = path.join(projectPath, item)
-
-		try {
-			if (await fs.pathExists(sourcePath)) {
-				await fs.copy(sourcePath, targetPath, {
-					overwrite: true,
-					errorOnExist: false,
-					filter: (src) => {
-						// 过滤掉不需要的文件
-						const relativePath = path.relative(cliDir, src)
-
-						// 跳过 node_modules
-						if (relativePath.includes('node_modules')) return false
-
-						// 跳过构建目录但保留重要的配置文件
-						if (relativePath.includes('build/') || relativePath.includes('dist/')) return false
-
-						// 精确过滤 Android 构建目录但保留重要文件
-						if (relativePath.includes('android/app/build/') || relativePath.includes('android/.gradle')) return false
-						if (relativePath.includes('android/.idea') || relativePath.includes('android/build/')) return false
-
-						// 保留重要的 Android 配置文件
-						if (relativePath === 'android/build.gradle') return true
-						if (relativePath === 'android/app/build.gradle') return true
-						if (relativePath === 'android/settings.gradle') return true
-						if (relativePath === 'android/gradle.properties') return true
-						if (relativePath === 'android/gradlew') return true
-						if (relativePath === 'android/gradlew.bat') return true
-
-						// 跳过 iOS 构建目录
-						if (relativePath.includes('ios/build')) return false
-
-						// 跳过 .git 目录
-						if (relativePath.includes('.git/')) return false
-
-						// 跳过 CLI 相关目录
-						if (relativePath.includes('packages/seaart-cli')) return false
-
-						// 跳过测试目录
-						if (relativePath.includes('test-rn-app') || relativePath.includes('seaart-cli-test')) return false
-
-						// 跳过临时文件
-						if (relativePath.includes('.DS_Store') || relativePath.includes('Thumbs.db')) return false
-
-						// 跳过锁文件（会重新生成）
-						if (relativePath.includes('pnpm-lock.yaml') || relativePath.includes('yarn.lock') || relativePath.includes('package-lock.json')) return false
-
-						// 跳过 iOS Pods 和构建文件
-						if (relativePath.includes('ios/Pods') || relativePath.includes('ios/build')) return false
-						if (relativePath.includes('Podfile.lock')) return false
-
-						return true
-					}
-				})
-				console.log(chalk.gray(`  ✓ 复制: ${item}`))
-			}
-		} catch (error: any) {
-			console.log(chalk.yellow(`  ⚠ 跳过: ${item} (${error.message})`))
-		}
-	}
-
-	// 确保 Android gradlew 文件有执行权限
-	await ensureAndroidExecutableFiles(projectPath)
-
-	// 验证并修复 Android 文件
-	await verifyAndFixAndroidFiles(projectPath)
-
-	// 更新项目特定的配置文件
-	await updateProjectConfigs(projectPath, projectName)
-
-	console.log(chalk.green('✅ 完整项目模板复制完成'))
-}
-
 async function ensureAndroidExecutableFiles(projectPath: string): Promise<void> {
 	try {
 		const gradlewPath = path.join(projectPath, 'android/gradlew')
@@ -342,7 +345,7 @@ async function ensureAndroidExecutableFiles(projectPath: string): Promise<void> 
 async function verifyAndFixAndroidFiles(projectPath: string): Promise<void> {
 	console.log(chalk.blue('🔍 验证 Android 文件完整性...'))
 
-	const cliDir = path.resolve(__dirname, '../../../../')
+	const cliDir = path.resolve(__dirname, '../../')
 	const androidFiles = [
 		'android/build.gradle',
 		'android/settings.gradle',

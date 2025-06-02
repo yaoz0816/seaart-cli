@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "SeaArt React Native 项目脚手架工具",
   "main": "dist/index.js",
   "bin": {
